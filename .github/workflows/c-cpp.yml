@@ -1,0 +1,70 @@
+name: Build SCXvid
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v2
+
+    - name: Set up MSBuild
+      uses: microsoft/setup-msbuild@v1.1
+
+    - name: Set up Visual Studio
+      uses: microsoft/setup-visualstudio@v1
+      with:
+        vs-version: 'latest'
+        # Install necessary components for C++ build
+        install-recommended: true
+        workload-ids: |
+          Microsoft.VisualStudio.Workload.VCTools
+          Microsoft.VisualStudio.Component.VC.Tools.x86.x64
+          Microsoft.VisualStudio.Component.Windows10SDK.19041
+
+    - name: Install NASM
+      run: choco install nasm
+
+    - name: Download and Extract Xvid
+      run: |
+        set XVID_VERSION=1.3.7
+        set XVID_URL=https://downloads.xvid.com/downloads/xvidcore-%XVID_VERSION%.tar.gz
+        curl -L -o xvidcore.tar.gz %XVID_URL%
+        tar -xzf xvidcore.tar.gz -C build_xvid
+
+    - name: Locate and Build Xvid
+      run: |
+        cd build_xvid
+        for /d %%D in (*) do (
+          if exist "%%D\build\win32" (
+            cd "%%D\build\win32"
+            set BUILD_DIR=%CD%
+            goto :found_build_dir
+          )
+        )
+        :found_build_dir
+        if exist "libxvidcore.vcxproj" (
+          MSBuild.exe libxvidcore.vcxproj /p:Configuration=Release /p:Platform=x64
+        ) else if exist "libxvidcore.vcproj" (
+          devenv.exe libxvidcore.vcproj /Upgrade
+          MSBuild.exe libxvidcore.vcxproj /p:Configuration=Release /p:Platform=x64
+        )
+
+    - name: Copy Xvid DLL to Repository Root
+      run: |
+        cd %BUILD_DIR%
+        copy xvidcore.dll %GITHUB_WORKSPACE%
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v2
+      with:
+        name: xvidcore-dll
+        path: xvidcore.dll
